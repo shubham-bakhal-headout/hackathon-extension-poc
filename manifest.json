@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Headout Login",
+  "version": "1.0.0",
+  "description": "Log in with your Headout (EOS) account and open Google. Shares the Ory session with *.headout.com.",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Headout Login",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "permissions": ["tabs", "storage", "cookies", "declarativeNetRequest"],
+  "host_permissions": [
+    "https://*.headout.com/*",
+    "https://*.test-headout.com/*",
+    "https://headout.zendesk.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://headout.zendesk.com/agent/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

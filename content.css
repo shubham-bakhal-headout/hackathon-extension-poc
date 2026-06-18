@@ -1,0 +1,27 @@
+.hd-booking-search-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 10px;
+  padding: 4px 10px;
+  border: 1px solid #6d28d9;
+  border-radius: 6px;
+  background: #6d28d9;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.hd-booking-search-btn:hover {
+  background: #5b21b6;
+  border-color: #5b21b6;
+}
+
+.hd-booking-search-btn--error {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}

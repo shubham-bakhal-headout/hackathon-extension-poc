@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="popup.css" />
+    <title>Headout Login</title>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Headout Login</h1>
+
+      <label class="field">
+        <span class="field-label">Environment</span>
+        <select id="env">
+          <option value="prod">Production</option>
+          <option value="test">Test / Staging</option>
+        </select>
+      </label>
+
+      <div id="status" class="status status--unknown">Checking session…</div>
+
+      <button id="login" class="btn" disabled>Login &amp; open Google</button>
+
+      <p class="hint">
+        Shares your existing <code>*.headout.com</code> login (e.g. eos.headout.com).
+      </p>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

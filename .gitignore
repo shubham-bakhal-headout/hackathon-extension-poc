@@ -1,0 +1,10 @@
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Dependencies / build (in case a build step is added later)
+node_modules/
+dist/
+*.zip
