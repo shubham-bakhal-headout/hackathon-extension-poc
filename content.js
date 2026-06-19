@@ -13,8 +13,8 @@
   const RUN_BOOKING_AUTOFILL = "RUN_BOOKING_AUTOFILL";
 
   const BUTTON_ID = "hd-autofill-btn";
-  const IDLE_LABEL = "🔗 Autofill vendor form";
-  const BUSY_LABEL = "⏳ Working…";
+  const IDLE_LABEL = "Automate Booking";
+  const BUSY_LABEL = "Automating…";
   const FLASH_MS = 3000;
 
   /**
