@@ -26,12 +26,13 @@
     "https://*.headout.com/*",
     "https://*.test-headout.com/*",
     "https://headout.zendesk.com/*",
+    "https://headout-45174.zendesk.com/*",
     "http://127.0.0.1:3000/*",
     "<all_urls>"
   ],
   "content_scripts": [
     {
-      "matches": ["https://headout.zendesk.com/agent/*"],
+      "matches": ["https://*.zendesk.com/agent/*"],
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"

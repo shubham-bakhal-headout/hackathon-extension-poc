@@ -1,13 +1,10 @@
 /**
- * Zendesk agent ticket content script.
+ * Zendesk agent ticket content script (works on any `*.zendesk.com` org).
  *
- * Adds a button next to the "Task #<id>" label. On click it reads the Booking id
- * from the active ticket and asks the service worker to run the booking-autofill
- * pipeline (fetch booking -> vendor link -> autofill script -> open & fill).
- *
- * Zendesk is a SPA that keeps multiple ticket panes mounted and hides inactive
- * ones, so we anchor to the *visible* Task label and read from the *active*
- * ticket only, re-checking on DOM mutations.
+ * Renders a fixed floating button — placement is anchored to the viewport, not
+ * to any Zendesk DOM/text, so it's robust across orgs and layout changes. On
+ * click it reads the Booking id from the active ticket and asks the service
+ * worker to run the booking-autofill pipeline.
  */
 (() => {
   "use strict";
@@ -20,24 +17,11 @@
   const BUSY_LABEL = "⏳ Working…";
   const FLASH_MS = 3000;
 
-  /** Visible "Task #<digits>" label element, or null. */
-  function findVisibleTaskLabel() {
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        if (!/Task #\d+/.test(node.nodeValue ?? "")) return NodeFilter.FILTER_SKIP;
-        const el = node.parentElement;
-        return el && el.offsetParent !== null
-          ? NodeFilter.FILTER_ACCEPT
-          : NodeFilter.FILTER_SKIP;
-      },
-    });
-    return walker.nextNode()?.parentElement ?? null;
-  }
-
   /**
    * Booking id from the active ticket. Prefers an explicit "Booking Id: <n>" in
-   * the visible body, then the document title ("Booking: <n> - …"), then any
-   * visible "Booking: <n>".
+   * the visible text, then the document title ("Booking id: <n>"), then any
+   * visible "Booking: <n>". Reads only visible nodes so hidden ticket panes
+   * (other open tabs) don't interfere.
    */
   function getBookingId() {
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
@@ -58,7 +42,7 @@
 
     return (
       body.match(/Booking\s*[_ ]?Id\s*[:#]?\s*(\d{4,})/i)?.[1] ??
-      document.title.match(/Booking:\s*(\d{4,})/i)?.[1] ??
+      document.title.match(/Booking\s*[_ ]?id\s*[:#]?\s*(\d{4,})/i)?.[1] ??
       body.match(/Booking:\s*(\d{4,})/i)?.[1] ??
       null
     );
@@ -83,7 +67,7 @@
       case "NOT_AUTHENTICATED":
         return "Not logged in to Headout";
       case "USER_SCRIPTS_DISABLED":
-        return "Enable 'Allow user scripts' on the extension";
+        return "Enable 'Allow user scripts'";
       default:
         return `Failed${code ? `: ${code}` : ""}`;
     }
@@ -120,36 +104,13 @@
     return button;
   }
 
-  /** Keep one button next to the currently visible Task label. */
+  /** Keep the floating button present (re-add if the SPA ever removes it). */
   function ensureButton() {
-    const label = findVisibleTaskLabel();
-    if (!label) return;
-
-    const existing = document.getElementById(BUTTON_ID);
-    const placedCorrectly =
-      existing?.isConnected &&
-      existing.offsetParent !== null &&
-      existing.parentElement === label.parentElement;
-    if (placedCorrectly) return;
-
-    existing?.remove();
-    label.insertAdjacentElement("afterend", createButton());
+    if (!document.getElementById(BUTTON_ID)) {
+      document.body.appendChild(createButton());
+    }
   }
 
-  // React to the SPA's DOM changes (debounced).
-  let pending = false;
-  const scheduleEnsure = () => {
-    if (pending) return;
-    pending = true;
-    setTimeout(() => {
-      pending = false;
-      ensureButton();
-    }, 300);
-  };
-
-  new MutationObserver(scheduleEnsure).observe(document.body, {
-    childList: true,
-    subtree: true,
-  });
+  new MutationObserver(ensureButton).observe(document.body, { childList: true });
   ensureButton();
 })();
