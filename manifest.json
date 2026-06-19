@@ -25,8 +25,7 @@
   "host_permissions": [
     "https://*.headout.com/*",
     "https://*.test-headout.com/*",
-    "https://headout.zendesk.com/*",
-    "https://headout-45174.zendesk.com/*",
+    "https://*.zendesk.com/*",
     "http://127.0.0.1:3000/*",
     "<all_urls>"
   ],

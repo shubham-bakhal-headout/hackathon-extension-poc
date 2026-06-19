@@ -17,6 +17,7 @@ import {
 import { MESSAGES, BOOKING_STATUS, ERROR_CODES } from "./lib/messages.js";
 import { isAuthenticated } from "./lib/session.js";
 import { createTab, waitForTabLoad } from "./lib/tabs.js";
+import { reportBookingEvent } from "./lib/telemetry.js";
 
 const LOG = "[Headout Autofill]";
 
@@ -42,11 +43,24 @@ async function runBookingAutofill(bookingId) {
 
   const tab = await createTab(link);
   await waitForTabLoad(tab.id);
+  const started = Date.now();
   const result = await runAutofillOnTab(tab.id, script, booking);
+  const durationMs = Date.now() - started;
 
   const status = result?.status ?? BOOKING_STATUS.ERROR;
   pendingBooking =
     status === BOOKING_STATUS.PAYMENT_REQUIRED ? { tabId: tab.id, link, bookingId } : null;
+
+  // Best-effort observability report (never throws).
+  reportBookingEvent({
+    vendorUrl: link,
+    userEmail: booking?.agentEmail ?? booking?.email ?? "agent@headout.com",
+    userName: booking?.agentName ?? booking?.name,
+    bookingId,
+    status,
+    result,
+    durationMs,
+  });
 
   console.log(`${LOG} booking ${bookingId} -> ${status} on ${link}`, result);
   return { link, status, result };

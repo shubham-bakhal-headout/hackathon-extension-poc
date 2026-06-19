@@ -35,11 +35,14 @@ export const ENVIRONMENTS = {
 
 export const DEFAULT_ENVIRONMENT_KEY = "prod";
 
-/** Local service that generates the form-autofill script. */
+/** Automate server base URL. */
+export const SERVER_BASE = "http://127.0.0.1:3000";
+
+/** Script resolve endpoint — returns JS for a vendor URL. */
 export const AUTOFILL_SERVICE = {
-  scriptUrl: "http://127.0.0.1:3000/api/forms/order-request/autofill-script",
+  scriptUrl: `${SERVER_BASE}/api/scripts/resolve`,
   /** Query parameter used to pass the vendor link when fetching the script. */
-  linkParam: "link",
+  linkParam: "url",
 };
 
 const STORAGE_KEY = "selectedEnv";
