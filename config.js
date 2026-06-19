@@ -1,34 +1,57 @@
-// Environment configuration.
-//
-// Auth is shared via the `.headout.com` Ory session cookie, so we never read the
-// cookie directly — credentialed fetches to `smcBase` carry it automatically.
-// `eos` is used as the `return_to` target for the Ory login flow.
+/**
+ * Static configuration: Headout environments and the local autofill service.
+ *
+ * Auth is cookie-based and shared across `*.headout.com`, so each environment is
+ * identified by the registrable domain its Ory session cookie is scoped to.
+ */
+
+/**
+ * @typedef {Object} Environment
+ * @property {string} key          Stable identifier (matches the ENVIRONMENTS key).
+ * @property {string} label        Human-readable name.
+ * @property {string} oryBase      Ory auth/login origin.
+ * @property {string} ariesBase    Aries API origin.
+ * @property {string} eos          EOS app origin (used as the login `return_to`).
+ * @property {string} cookieDomain Registrable domain the session cookie lives on.
+ */
+
+/** @type {Record<string, Omit<Environment, "key">>} */
 export const ENVIRONMENTS = {
   prod: {
     label: "Production",
     oryBase: "https://auth.headout.com",
-    smcBase: "https://smc.headout.com",
     ariesBase: "https://aries.headout.com",
     eos: "https://eos.headout.com",
-    // Registrable domain the Ory session cookie is scoped to (`.headout.com`).
     cookieDomain: "headout.com",
   },
   test: {
     label: "Test / Staging",
-    // NOTE: test Ory host is assumed; update here if staging auth differs.
     oryBase: "https://auth.test-headout.com",
-    smcBase: "https://smc.test-headout.com",
     ariesBase: "https://aries.test-headout.com",
     eos: "https://eos.test-headout.com",
     cookieDomain: "test-headout.com",
   },
 };
 
-export const DEFAULT_ENV = "prod";
+export const DEFAULT_ENVIRONMENT_KEY = "prod";
 
-// Resolve the currently selected environment from chrome.storage.local.
-export async function getEnv() {
-  const { selectedEnv } = await chrome.storage.local.get("selectedEnv");
-  const key = ENVIRONMENTS[selectedEnv] ? selectedEnv : DEFAULT_ENV;
-  return { key, ...ENVIRONMENTS[key] };
+/** Local service that generates the form-autofill script. */
+export const AUTOFILL_SERVICE = {
+  scriptUrl: "http://127.0.0.1:3000/api/forms/order-request/autofill-script",
+  /** Query parameter used to pass the vendor link when fetching the script. */
+  linkParam: "link",
+};
+
+const STORAGE_KEY = "selectedEnv";
+
+/** Resolve the environment the user selected in the popup (defaults to prod). */
+export async function getEnvironment() {
+  const { [STORAGE_KEY]: key } = await chrome.storage.local.get(STORAGE_KEY);
+  const resolvedKey = ENVIRONMENTS[key] ? key : DEFAULT_ENVIRONMENT_KEY;
+  return { key: resolvedKey, ...ENVIRONMENTS[resolvedKey] };
+}
+
+/** Persist the selected environment. */
+export function setEnvironment(key) {
+  return chrome.storage.local.set({ [STORAGE_KEY]: key });
 }

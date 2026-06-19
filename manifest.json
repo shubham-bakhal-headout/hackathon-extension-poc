@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Headout Login",
+  "name": "Headout Vendor Autofill",
   "version": "1.0.0",
-  "description": "Log in with your Headout (EOS) account and open Google. Shares the Ory session with *.headout.com.",
+  "description": "From a Zendesk ticket, look up the booking in Aries and autofill the vendor form. Shares the Ory session with *.headout.com.",
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Headout Login",
+    "default_title": "Headout Vendor Autofill",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -21,11 +21,13 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["tabs", "storage", "cookies", "declarativeNetRequest"],
+  "permissions": ["tabs", "storage", "cookies", "declarativeNetRequest", "userScripts"],
   "host_permissions": [
     "https://*.headout.com/*",
     "https://*.test-headout.com/*",
-    "https://headout.zendesk.com/*"
+    "https://headout.zendesk.com/*",
+    "http://127.0.0.1:3000/*",
+    "<all_urls>"
   ],
   "content_scripts": [
     {

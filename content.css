@@ -1,4 +1,4 @@
-.hd-booking-search-btn {
+.hd-autofill-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -11,17 +11,22 @@
   font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
-  cursor: pointer;
-  vertical-align: middle;
   white-space: nowrap;
+  vertical-align: middle;
+  cursor: pointer;
 }
 
-.hd-booking-search-btn:hover {
+.hd-autofill-btn:hover:not(:disabled) {
   background: #5b21b6;
   border-color: #5b21b6;
 }
 
-.hd-booking-search-btn--error {
+.hd-autofill-btn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.hd-autofill-btn--error {
   background: #b91c1c;
   border-color: #b91c1c;
 }

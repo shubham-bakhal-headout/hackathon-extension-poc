@@ -1,147 +1,155 @@
-// Content script for Headout Zendesk agent ticket pages.
-//
-// Adds a "Search booking on Google" button next to the "Task #<id>" label in the
-// ticket header. On click it reads the Booking id from the ticket UI (NOT the
-// Task/ticket id in the URL) and opens a Google search for it.
-//
-// Zendesk is a single-page app that keeps multiple ticket panes in the DOM and
-// hides inactive ones, so we (a) anchor to the *visible* Task label, (b) read the
-// booking id from the *active* ticket only, and (c) re-check on DOM mutations.
-(function () {
-  const BTN_ID = "hd-booking-search-btn";
+/**
+ * Zendesk agent ticket content script.
+ *
+ * Adds a button next to the "Task #<id>" label. On click it reads the Booking id
+ * from the active ticket and asks the service worker to run the booking-autofill
+ * pipeline (fetch booking -> vendor link -> autofill script -> open & fill).
+ *
+ * Zendesk is a SPA that keeps multiple ticket panes mounted and hides inactive
+ * ones, so we anchor to the *visible* Task label and read from the *active*
+ * ticket only, re-checking on DOM mutations.
+ */
+(() => {
+  "use strict";
 
-  // --- Find the visible "Task #<digits>" label to anchor the button to. -------
-  function findVisibleTaskBadge() {
+  // Mirror of MESSAGES.RUN_BOOKING_AUTOFILL — content scripts can't import modules.
+  const RUN_BOOKING_AUTOFILL = "RUN_BOOKING_AUTOFILL";
+
+  const BUTTON_ID = "hd-autofill-btn";
+  const IDLE_LABEL = "🔗 Autofill vendor form";
+  const BUSY_LABEL = "⏳ Working…";
+  const FLASH_MS = 3000;
+
+  /** Visible "Task #<digits>" label element, or null. */
+  function findVisibleTaskLabel() {
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
-        if (!/Task #\d+/.test(node.nodeValue || "")) return NodeFilter.FILTER_SKIP;
+        if (!/Task #\d+/.test(node.nodeValue ?? "")) return NodeFilter.FILTER_SKIP;
         const el = node.parentElement;
-        // Only the active ticket's header is visible (offsetParent !== null).
-        if (!el || el.offsetParent === null) return NodeFilter.FILTER_SKIP;
-        return NodeFilter.FILTER_ACCEPT;
+        return el && el.offsetParent !== null
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_SKIP;
       },
     });
-    const node = walker.nextNode();
-    return node ? node.parentElement : null;
+    return walker.nextNode()?.parentElement ?? null;
   }
 
-  // --- Extract the Booking id from the active ticket. -------------------------
-  // Priority: explicit "Booking Id: <n>" in the visible body, then the document
-  // title (always the active ticket's subject "Booking: <n> - …"), then any
-  // visible "Booking: <n>".
+  /**
+   * Booking id from the active ticket. Prefers an explicit "Booking Id: <n>" in
+   * the visible body, then the document title ("Booking: <n> - …"), then any
+   * visible "Booking: <n>".
+   */
   function getBookingId() {
-    // 1) Visible body text that mentions "booking" (excludes hidden panes).
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
-        if (!/booking/i.test(node.nodeValue || "")) return NodeFilter.FILTER_SKIP;
+        if (!/booking/i.test(node.nodeValue ?? "")) return NodeFilter.FILTER_SKIP;
         const el = node.parentElement;
-        if (!el || el.offsetParent === null) return NodeFilter.FILTER_SKIP;
-        return NodeFilter.FILTER_ACCEPT;
+        return el && el.offsetParent !== null
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_SKIP;
       },
     });
-    const visibleText = [];
-    let node;
-    while ((node = walker.nextNode())) visibleText.push(node.nodeValue);
-    const body = visibleText.join("\n");
 
-    // Matches "Booking Id: 32219261", "Booking_Id:32219261", "Booking ID 32219261".
-    let m = body.match(/Booking\s*[_ ]?Id\s*[:#]?\s*(\d{4,})/i);
-    if (m) return m[1];
-
-    // 2) Document title reliably reflects the ACTIVE ticket subject.
-    m = (document.title || "").match(/Booking:\s*(\d{4,})/i);
-    if (m) return m[1];
-
-    // 3) Fallback: any visible "Booking: <n>".
-    m = body.match(/Booking:\s*(\d{4,})/i);
-    return m ? m[1] : null;
-  }
-
-  function createButton() {
-    const btn = document.createElement("button");
-    btn.id = BTN_ID;
-    btn.type = "button";
-    btn.className = "hd-booking-search-btn";
-    btn.textContent = "🔎 Search booking on Google";
-    btn.addEventListener("click", onClick);
-    return btn;
-  }
-
-  const LABEL = "🔎 Search booking on Google";
-
-  function flash(btn, text) {
-    btn.textContent = text;
-    btn.classList.add("hd-booking-search-btn--error");
-    setTimeout(() => {
-      btn.textContent = LABEL;
-      btn.classList.remove("hd-booking-search-btn--error");
-    }, 2500);
-  }
-
-  function onClick(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    const btn = e.currentTarget;
-    const bookingId = getBookingId();
-
-    if (!bookingId) {
-      flash(btn, "Booking ID not found");
-      return;
+    const parts = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      parts.push(node.nodeValue);
     }
+    const body = parts.join("\n");
 
-    btn.disabled = true;
-    btn.textContent = "⏳ Looking up booking…";
-
-    // Background calls the Aries API (authenticated) and Google-searches the result.
-    chrome.runtime.sendMessage(
-      { type: "BOOKING_LOOKUP", bookingId },
-      (resp) => {
-        btn.disabled = false;
-        btn.textContent = LABEL;
-        if (!resp || !resp.ok) {
-          flash(
-            btn,
-            resp?.error === "NOT_AUTHENTICATED"
-              ? "Not logged in to Headout"
-              : `Lookup failed${resp?.error ? `: ${resp.error}` : ""}`
-          );
-        }
-      }
+    return (
+      body.match(/Booking\s*[_ ]?Id\s*[:#]?\s*(\d{4,})/i)?.[1] ??
+      document.title.match(/Booking:\s*(\d{4,})/i)?.[1] ??
+      body.match(/Booking:\s*(\d{4,})/i)?.[1] ??
+      null
     );
   }
 
-  // Ensure exactly one button sits next to the currently visible Task label.
-  function ensureButton() {
-    const badge = findVisibleTaskBadge();
-    if (!badge) return;
-
-    const existing = document.getElementById(BTN_ID);
-    if (
-      existing &&
-      existing.isConnected &&
-      existing.offsetParent !== null &&
-      existing.parentElement === badge.parentElement
-    ) {
-      return; // already placed correctly for the active ticket
-    }
-    if (existing) existing.remove();
-
-    badge.insertAdjacentElement("afterend", createButton());
+  function sendMessage(message) {
+    return new Promise((resolve) => chrome.runtime.sendMessage(message, resolve));
   }
 
-  // --- React to Zendesk's SPA DOM changes (debounced). ------------------------
-  let scheduled = false;
-  function schedule() {
-    if (scheduled) return;
-    scheduled = true;
+  function setLabel(button, text, isError = false) {
+    button.textContent = text;
+    button.classList.toggle("hd-autofill-btn--error", isError);
+  }
+
+  function flashError(button, text) {
+    setLabel(button, text, true);
+    setTimeout(() => setLabel(button, IDLE_LABEL), FLASH_MS);
+  }
+
+  function describeError(code) {
+    switch (code) {
+      case "NOT_AUTHENTICATED":
+        return "Not logged in to Headout";
+      case "USER_SCRIPTS_DISABLED":
+        return "Enable 'Allow user scripts' on the extension";
+      default:
+        return `Failed${code ? `: ${code}` : ""}`;
+    }
+  }
+
+  async function onClick(event) {
+    const button = event.currentTarget;
+    const bookingId = getBookingId();
+    if (!bookingId) {
+      flashError(button, "Booking ID not found");
+      return;
+    }
+
+    button.disabled = true;
+    setLabel(button, BUSY_LABEL);
+
+    const response = await sendMessage({ type: RUN_BOOKING_AUTOFILL, bookingId });
+
+    button.disabled = false;
+    if (response?.ok) {
+      setLabel(button, IDLE_LABEL);
+    } else {
+      flashError(button, describeError(response?.error));
+    }
+  }
+
+  function createButton() {
+    const button = document.createElement("button");
+    button.id = BUTTON_ID;
+    button.type = "button";
+    button.className = "hd-autofill-btn";
+    button.textContent = IDLE_LABEL;
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  /** Keep one button next to the currently visible Task label. */
+  function ensureButton() {
+    const label = findVisibleTaskLabel();
+    if (!label) return;
+
+    const existing = document.getElementById(BUTTON_ID);
+    const placedCorrectly =
+      existing?.isConnected &&
+      existing.offsetParent !== null &&
+      existing.parentElement === label.parentElement;
+    if (placedCorrectly) return;
+
+    existing?.remove();
+    label.insertAdjacentElement("afterend", createButton());
+  }
+
+  // React to the SPA's DOM changes (debounced).
+  let pending = false;
+  const scheduleEnsure = () => {
+    if (pending) return;
+    pending = true;
     setTimeout(() => {
-      scheduled = false;
+      pending = false;
       ensureButton();
     }, 300);
-  }
+  };
 
-  const observer = new MutationObserver(schedule);
-  observer.observe(document.body, { childList: true, subtree: true });
-
+  new MutationObserver(scheduleEnsure).observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
   ensureButton();
 })();

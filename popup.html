@@ -4,29 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="stylesheet" href="popup.css" />
-    <title>Headout Login</title>
+    <title>Headout Autofill</title>
   </head>
   <body>
     <div class="card">
-      <h1>Headout Login</h1>
+      <h1>Headout Autofill</h1>
 
       <label class="field">
         <span class="field-label">Environment</span>
-        <select id="env">
-          <option value="prod">Production</option>
-          <option value="test">Test / Staging</option>
-        </select>
+        <select id="env"></select>
       </label>
 
       <div id="status" class="status status--unknown">Checking session…</div>
 
-      <button id="login" class="btn" disabled>Login &amp; open Google</button>
+      <button id="login" class="btn" hidden>Log in to Headout</button>
 
       <p class="hint">
-        Shares your existing <code>*.headout.com</code> login (e.g. eos.headout.com).
+        Open a Zendesk ticket and use the <strong>Autofill vendor form</strong>
+        button next to the Task number.
       </p>
     </div>
 
-    <script src="popup.js"></script>
+    <script type="module" src="popup.js"></script>
   </body>
 </html>

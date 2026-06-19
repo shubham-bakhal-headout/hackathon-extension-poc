@@ -1,58 +1,62 @@
+import {
+  DEFAULT_ENVIRONMENT_KEY,
+  ENVIRONMENTS,
+  getEnvironment,
+  setEnvironment,
+} from "./config.js";
+import { MESSAGES } from "./lib/messages.js";
+
 const envSelect = document.getElementById("env");
 const statusEl = document.getElementById("status");
 const loginBtn = document.getElementById("login");
 
-const DEFAULT_ENV = "prod";
+const sendMessage = (message) =>
+  new Promise((resolve) => chrome.runtime.sendMessage(message, resolve));
 
 function setStatus(text, kind) {
   statusEl.textContent = text;
   statusEl.className = `status status--${kind}`;
 }
 
-function sendMessage(message) {
-  return new Promise((resolve) => chrome.runtime.sendMessage(message, resolve));
+function renderEnvironmentOptions(selectedKey) {
+  envSelect.replaceChildren(
+    ...Object.entries(ENVIRONMENTS).map(([key, { label }]) => {
+      const option = document.createElement("option");
+      option.value = key;
+      option.textContent = label;
+      option.selected = key === selectedKey;
+      return option;
+    })
+  );
 }
 
-// Ask the background worker whether the current env has a valid session.
 async function refreshStatus() {
   setStatus("Checking session…", "unknown");
-  loginBtn.disabled = true;
-  const res = await sendMessage({ type: "CHECK" });
-  if (res?.authenticated) {
+  loginBtn.hidden = true;
+
+  const response = await sendMessage({ type: MESSAGES.AUTH_STATUS });
+  if (response?.authenticated) {
     setStatus("Logged in ✓", "ok");
-    loginBtn.textContent = "Open Google";
   } else {
     setStatus("Not logged in", "warn");
-    loginBtn.textContent = "Login & open Google";
+    loginBtn.hidden = false;
   }
-  loginBtn.disabled = false;
-}
-
-async function init() {
-  const { selectedEnv } = await chrome.storage.local.get("selectedEnv");
-  envSelect.value = selectedEnv || DEFAULT_ENV;
-  await refreshStatus();
 }
 
 envSelect.addEventListener("change", async () => {
-  await chrome.storage.local.set({ selectedEnv: envSelect.value });
+  await setEnvironment(envSelect.value);
   await refreshStatus();
 });
 
 loginBtn.addEventListener("click", async () => {
-  loginBtn.disabled = true;
-  setStatus("Opening login…", "unknown");
-
-  const res = await sendMessage({ type: "LOGIN" });
-
-  if (res?.status === "authenticated" || res?.status === "logged_in") {
-    setStatus("Logged in ✓ — opened Google", "ok");
-  } else if (res?.status === "login_timeout") {
-    setStatus("Login timed out. Try again.", "warn");
-  } else {
-    setStatus("Something went wrong. Try again.", "warn");
-  }
-  loginBtn.disabled = false;
+  await sendMessage({ type: MESSAGES.OPEN_LOGIN });
+  window.close();
 });
+
+async function init() {
+  const env = await getEnvironment();
+  renderEnvironmentOptions(env.key ?? DEFAULT_ENVIRONMENT_KEY);
+  await refreshStatus();
+}
 
 init();
