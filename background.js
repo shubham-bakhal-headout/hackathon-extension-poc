@@ -9,16 +9,29 @@
  */
 import { getEnvironment } from "./config.js";
 import { resolveVendorLink, fetchBooking } from "./lib/aries.js";
-import { fetchAutofillScript, runAutofillOnTab } from "./lib/autofill.js";
-import { MESSAGES } from "./lib/messages.js";
+import {
+  fetchAutofillScript,
+  runAutofillOnTab,
+  runConfirmAfterPaymentOnTab,
+} from "./lib/autofill.js";
+import { MESSAGES, BOOKING_STATUS, ERROR_CODES } from "./lib/messages.js";
 import { isAuthenticated } from "./lib/session.js";
 import { createTab, waitForTabLoad } from "./lib/tabs.js";
 
 const LOG = "[Headout Autofill]";
 
 /**
- * Booking id -> vendor link -> autofill. Returns the opened link.
+ * The most recent booking run that reached PAYMENT_REQUIRED, kept so a later
+ * CONFIRM_AFTER_PAYMENT can re-run the script's `confirmAfterPayment()` on the
+ * same vendor tab. (Single-slot: one booking is driven at a time.)
+ * @type {{ tabId: number, link: string, bookingId: string|number } | null}
+ */
+let pendingBooking = null;
+
+/**
+ * Booking id -> vendor link -> automation up to payment.
  * @param {string|number} bookingId
+ * @returns {Promise<{ link: string, status: string, result: object }>}
  */
 async function runBookingAutofill(bookingId) {
   const env = await getEnvironment();
@@ -29,10 +42,34 @@ async function runBookingAutofill(bookingId) {
 
   const tab = await createTab(link);
   await waitForTabLoad(tab.id);
-  await runAutofillOnTab(tab.id, script, booking);
+  const result = await runAutofillOnTab(tab.id, script, booking);
 
-  console.log(`${LOG} autofilled ${link} for booking ${bookingId}`);
-  return { link };
+  const status = result?.status ?? BOOKING_STATUS.ERROR;
+  pendingBooking =
+    status === BOOKING_STATUS.PAYMENT_REQUIRED ? { tabId: tab.id, link, bookingId } : null;
+
+  console.log(`${LOG} booking ${bookingId} -> ${status} on ${link}`, result);
+  return { link, status, result };
+}
+
+/**
+ * Re-run the generated script's `confirmAfterPayment()` on the vendor tab from
+ * the last PAYMENT_REQUIRED run, to capture the order reference after the agent
+ * has paid manually.
+ * @returns {Promise<{ status: string, result: object }>}
+ */
+async function confirmAfterPayment() {
+  if (!pendingBooking) throw new Error(ERROR_CODES.NO_PENDING_BOOKING);
+
+  const env = await getEnvironment();
+  const script = await fetchAutofillScript(pendingBooking.link);
+  const result = await runConfirmAfterPaymentOnTab(pendingBooking.tabId, script);
+
+  const status = result?.status ?? BOOKING_STATUS.ERROR;
+  if (status === BOOKING_STATUS.CONFIRMED) pendingBooking = null;
+
+  console.log(`${LOG} confirmAfterPayment -> ${status}`, result);
+  return { status, result };
 }
 
 /** Handlers keyed by message type. Each returns the payload sent back to the caller. */
@@ -50,6 +87,8 @@ const HANDLERS = {
   },
 
   [MESSAGES.RUN_BOOKING_AUTOFILL]: ({ bookingId }) => runBookingAutofill(bookingId),
+
+  [MESSAGES.CONFIRM_AFTER_PAYMENT]: () => confirmAfterPayment(),
 };
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

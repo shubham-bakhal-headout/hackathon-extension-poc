@@ -9,13 +9,20 @@
 (() => {
   "use strict";
 
-  // Mirror of MESSAGES.RUN_BOOKING_AUTOFILL — content scripts can't import modules.
+  // Mirrors of lib/messages.js — content scripts can't import modules. Keep in sync.
   const RUN_BOOKING_AUTOFILL = "RUN_BOOKING_AUTOFILL";
+  const CONFIRM_AFTER_PAYMENT = "CONFIRM_AFTER_PAYMENT";
+  const STATUS = { PAYMENT_REQUIRED: "PAYMENT_REQUIRED", CONFIRMED: "CONFIRMED", ERROR: "ERROR" };
 
   const BUTTON_ID = "hd-autofill-btn";
   const IDLE_LABEL = "Automate Booking";
   const BUSY_LABEL = "Automating…";
+  const CONFIRM_LABEL = "Paid? Confirm booking";
+  const CONFIRMING_LABEL = "Confirming…";
   const FLASH_MS = 3000;
+
+  /** Button mode: "run" starts the booking; "confirm" reads the order ref post-payment. */
+  let mode = "run";
 
   /**
    * Booking id from the active ticket. Prefers an explicit "Booking Id: <n>" in
@@ -68,13 +75,28 @@
         return "Not logged in to Headout";
       case "USER_SCRIPTS_DISABLED":
         return "Enable 'Allow user scripts'";
+      case "AUTOMATION_API_MISSING":
+        return "Script has no automation API";
+      case "NO_PENDING_BOOKING":
+        return "No booking awaiting payment";
       default:
         return `Failed${code ? `: ${code}` : ""}`;
     }
   }
 
-  async function onClick(event) {
-    const button = event.currentTarget;
+  /** Switch the button into the post-payment "confirm" mode. */
+  function enterConfirmMode(button) {
+    mode = "confirm";
+    setLabel(button, CONFIRM_LABEL);
+  }
+
+  function resetToRun(button, label = IDLE_LABEL) {
+    mode = "run";
+    setLabel(button, label);
+  }
+
+  /** Start the booking: booking id -> vendor link -> automation up to payment. */
+  async function runBooking(button) {
     const bookingId = getBookingId();
     if (!bookingId) {
       flashError(button, "Booking ID not found");
@@ -83,15 +105,50 @@
 
     button.disabled = true;
     setLabel(button, BUSY_LABEL);
-
     const response = await sendMessage({ type: RUN_BOOKING_AUTOFILL, bookingId });
-
     button.disabled = false;
-    if (response?.ok) {
-      setLabel(button, IDLE_LABEL);
-    } else {
+
+    if (!response?.ok) {
       flashError(button, describeError(response?.error));
+      return;
     }
+    const result = response.result ?? {};
+    if (response.status === STATUS.PAYMENT_REQUIRED) {
+      enterConfirmMode(button); // vendor tab is parked on the payment page
+    } else if (response.status === STATUS.CONFIRMED) {
+      flashSuccess(button, result.reference ? `Booked ✓ ${result.reference}` : "Booked ✓");
+    } else {
+      flashError(button, describeError(result.error || result.code));
+    }
+  }
+
+  /** After the agent has paid manually, read the order reference. */
+  async function confirmPayment(button) {
+    button.disabled = true;
+    setLabel(button, CONFIRMING_LABEL);
+    const response = await sendMessage({ type: CONFIRM_AFTER_PAYMENT });
+    button.disabled = false;
+
+    const result = response?.result ?? {};
+    if (response?.ok && response.status === STATUS.CONFIRMED) {
+      resetToRun(button);
+      flashSuccess(button, result.reference ? `Booked ✓ ${result.reference}` : "Booked ✓");
+      return;
+    }
+    // Stay in confirm mode so the agent can retry once payment is truly done.
+    const code = response?.ok ? result.error || result.code : response?.error;
+    setLabel(button, describeError(code), true);
+    setTimeout(() => setLabel(button, CONFIRM_LABEL), FLASH_MS);
+  }
+
+  function flashSuccess(button, text) {
+    setLabel(button, text);
+    setTimeout(() => resetToRun(button), FLASH_MS);
+  }
+
+  function onClick(event) {
+    const button = event.currentTarget;
+    return mode === "confirm" ? confirmPayment(button) : runBooking(button);
   }
 
   function createButton() {
