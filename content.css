@@ -1,9 +1,15 @@
-#hd-autofill-btn.hd-autofill-btn {
+#hd-autofill-control.hd-autofill-control {
   position: fixed;
-  top: 106px;
+  top: 56px;
   right: 36px;
   z-index: 2147483647;
 
+  display: inline-flex;
+  align-items: center;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+#hd-autofill-btn.hd-autofill-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -12,7 +18,7 @@
   border-radius: 4px;
   background: #6d28d9;
   color: #fff;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: inherit;
   font-size: 15px;
   font-weight: 700;
   line-height: 1.2;
@@ -32,4 +38,74 @@
 
 #hd-autofill-btn.hd-autofill-btn--error {
   background: #b91c1c;
+}
+
+#hd-autofill-control.hd-autofill-control--confirm #hd-autofill-btn.hd-autofill-btn {
+  display: none;
+}
+
+#hd-autofill-control.hd-autofill-control--confirm .hd-payment-confirm {
+  display: inline-flex;
+}
+
+.hd-payment-confirm {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+}
+
+.hd-payment-confirm__status {
+  min-width: 142px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.hd-payment-confirm__status--error {
+  color: #b91c1c;
+}
+
+.hd-payment-confirm__choice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 58px;
+  min-height: 36px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.hd-payment-confirm__choice:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.hd-payment-confirm__choice--yes {
+  background: #047857;
+}
+
+.hd-payment-confirm__choice--yes:hover:not(:disabled) {
+  background: #065f46;
+}
+
+.hd-payment-confirm__choice--no {
+  background: #b91c1c;
+}
+
+.hd-payment-confirm__choice--no:hover:not(:disabled) {
+  background: #991b1b;
 }

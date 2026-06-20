@@ -11,17 +11,16 @@
 
   // Mirrors of lib/messages.js — content scripts can't import modules. Keep in sync.
   const RUN_BOOKING_AUTOFILL = "RUN_BOOKING_AUTOFILL";
-  const CONFIRM_AFTER_PAYMENT = "CONFIRM_AFTER_PAYMENT";
+  const PAYMENT_DECISION = "PAYMENT_DECISION";
   const STATUS = { PAYMENT_REQUIRED: "PAYMENT_REQUIRED", CONFIRMED: "CONFIRMED", ERROR: "ERROR" };
 
+  const CONTROL_ID = "hd-autofill-control";
   const BUTTON_ID = "hd-autofill-btn";
   const IDLE_LABEL = "Automate Booking";
   const BUSY_LABEL = "Automating…";
-  const CONFIRM_LABEL = "Paid? Confirm booking";
-  const CONFIRMING_LABEL = "Confirming…";
   const FLASH_MS = 3000;
 
-  /** Button mode: "run" starts the booking; "confirm" reads the order ref post-payment. */
+  /** Button mode: "run" starts the booking; "confirm" accepts the agent payment answer. */
   let mode = "run";
 
   /**
@@ -77,21 +76,21 @@
         return "Enable 'Allow user scripts'";
       case "AUTOMATION_API_MISSING":
         return "Script has no automation API";
-      case "NO_PENDING_BOOKING":
-        return "No booking awaiting payment";
       default:
         return `Failed${code ? `: ${code}` : ""}`;
     }
   }
 
   /** Switch the button into the post-payment "confirm" mode. */
-  function enterConfirmMode(button) {
+  function enterConfirmMode(control) {
     mode = "confirm";
-    setLabel(button, CONFIRM_LABEL);
+    control.classList.add("hd-autofill-control--confirm");
+    setConfirmStatus(control, "Script worked?");
   }
 
   function resetToRun(button, label = IDLE_LABEL) {
     mode = "run";
+    button.closest(`#${CONTROL_ID}`)?.classList.remove("hd-autofill-control--confirm");
     setLabel(button, label);
   }
 
@@ -113,32 +112,39 @@
       return;
     }
     const result = response.result ?? {};
-    if (response.status === STATUS.PAYMENT_REQUIRED) {
-      enterConfirmMode(button); // vendor tab is parked on the payment page
-    } else if (response.status === STATUS.CONFIRMED) {
+    if (response.status === STATUS.CONFIRMED) {
       flashSuccess(button, result.reference ? `Booked ✓ ${result.reference}` : "Booked ✓");
     } else {
-      flashError(button, describeError(result.error || result.code));
+      enterConfirmMode(button.closest(`#${CONTROL_ID}`));
     }
   }
 
-  /** After the agent has paid manually, read the order reference. */
-  async function confirmPayment(button) {
+  /** After the agent has paid manually, accept the agent's answer directly. */
+  async function confirmPayment(button, paid) {
+    const control = button.closest(`#${CONTROL_ID}`);
     button.disabled = true;
-    setLabel(button, CONFIRMING_LABEL);
-    const response = await sendMessage({ type: CONFIRM_AFTER_PAYMENT });
+    setConfirmButtonsDisabled(control, true);
+    setConfirmStatus(control, paid ? "Accepting yes..." : "Accepting no...");
+
+    const response = await sendMessage({ type: PAYMENT_DECISION, paid });
+
     button.disabled = false;
+    setConfirmButtonsDisabled(control, false);
 
     const result = response?.result ?? {};
     if (response?.ok && response.status === STATUS.CONFIRMED) {
       resetToRun(button);
-      flashSuccess(button, result.reference ? `Booked ✓ ${result.reference}` : "Booked ✓");
+      flashSuccess(button, "Booked ✓");
       return;
     }
-    // Stay in confirm mode so the agent can retry once payment is truly done.
+
+    if (response?.ok && response.status === STATUS.PAYMENT_REQUIRED) {
+      setConfirmStatus(control, "Payment not confirmed");
+      return;
+    }
+
     const code = response?.ok ? result.error || result.code : response?.error;
-    setLabel(button, describeError(code), true);
-    setTimeout(() => setLabel(button, CONFIRM_LABEL), FLASH_MS);
+    setConfirmStatus(control, describeError(code), true);
   }
 
   function flashSuccess(button, text) {
@@ -148,23 +154,65 @@
 
   function onClick(event) {
     const button = event.currentTarget;
-    return mode === "confirm" ? confirmPayment(button) : runBooking(button);
+    return mode === "confirm" ? undefined : runBooking(button);
   }
 
-  function createButton() {
+  function setConfirmStatus(control, text, isError = false) {
+    const status = control?.querySelector(".hd-payment-confirm__status");
+    if (!status) return;
+
+    status.textContent = text;
+    status.classList.toggle("hd-payment-confirm__status--error", isError);
+  }
+
+  function setConfirmButtonsDisabled(control, disabled) {
+    control
+      ?.querySelectorAll(".hd-payment-confirm__choice")
+      .forEach((button) => {
+        button.disabled = disabled;
+      });
+  }
+
+  function createControl() {
+    const control = document.createElement("div");
+    control.id = CONTROL_ID;
+    control.className = "hd-autofill-control";
+
     const button = document.createElement("button");
     button.id = BUTTON_ID;
     button.type = "button";
     button.className = "hd-autofill-btn";
     button.textContent = IDLE_LABEL;
     button.addEventListener("click", onClick);
-    return button;
+
+    const confirm = document.createElement("div");
+    confirm.className = "hd-payment-confirm";
+
+    const status = document.createElement("span");
+    status.className = "hd-payment-confirm__status";
+    status.textContent = "Payment completed?";
+
+    const yesButton = document.createElement("button");
+    yesButton.type = "button";
+    yesButton.className = "hd-payment-confirm__choice hd-payment-confirm__choice--yes";
+    yesButton.textContent = "Yes";
+    yesButton.addEventListener("click", () => confirmPayment(button, true));
+
+    const noButton = document.createElement("button");
+    noButton.type = "button";
+    noButton.className = "hd-payment-confirm__choice hd-payment-confirm__choice--no";
+    noButton.textContent = "No";
+    noButton.addEventListener("click", () => confirmPayment(button, false));
+
+    confirm.append(status, yesButton, noButton);
+    control.append(button, confirm);
+    return control;
   }
 
   /** Keep the floating button present (re-add if the SPA ever removes it). */
   function ensureButton() {
-    if (!document.getElementById(BUTTON_ID)) {
-      document.body.appendChild(createButton());
+    if (!document.getElementById(CONTROL_ID)) {
+      document.body.appendChild(createControl());
     }
   }
 

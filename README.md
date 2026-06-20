@@ -9,10 +9,12 @@ vendor's order form — reusing the agent's existing Headout login.
 2. On click, the content script reads the **Booking id** from the active ticket
    and asks the service worker to run the pipeline:
    1. `fetchBooking` — `GET /apis/v2/order-fulfillment/booking/{id}` (Aries).
-   2. `resolveVendorLink` — `GET /apis/vendor-tour?vendorId=&tourId=`, then extract
+   2. `fetchGuestDetails` — `GET /booking/{id}/guestDetails` (Aries), added as
+      `booking.guestDetails` before the automation runs.
+   3. `resolveVendorLink` — `GET /apis/vendor-tour?vendorId=&tourId=`, then extract
       the link from the response.
-   3. `fetchAutofillScript` — `GET <local>/autofill-script?link=<vendorLink>`.
-   4. Open the vendor link, then run the script with the booking data via the
+   4. `fetchAutofillScript` — `GET <local>/autofill-script?link=<vendorLink>`.
+   5. Open the vendor link, then run the script with the booking data via the
       `userScripts` API.
 
 ## Authentication
@@ -44,7 +46,7 @@ lib/
   messages.js        Message protocol + error codes
   session.js         Ory session detection (login state)
   auth-fetch.js      Authenticated fetch (cookie/referer injection via DNR)
-  aries.js           Aries client: booking, vendor link
+  aries.js           Aries client: booking, guest details, vendor link
   autofill.js        Fetch + run the autofill script (userScripts API)
   tabs.js            Tab helpers (create, wait-for-load)
 popup.{html,js,css}  Auth status + environment switcher

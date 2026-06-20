@@ -2,32 +2,20 @@
  * Service worker: message router and the booking-autofill pipeline.
  *
  * Pipeline (triggered by the Zendesk button):
- *   1. Fetch booking details from Aries (authenticated).
+ *   1. Fetch booking and guest details from Aries (authenticated).
  *   2. Resolve the vendor link from the vendor-tour endpoint.
  *   3. Fetch the autofill script for that link.
  *   4. Open the vendor link and run the script with the booking data.
  */
 import { getEnvironment } from "./config.js";
-import { resolveVendorLink, fetchBooking } from "./lib/aries.js";
-import {
-  fetchAutofillScript,
-  runAutofillOnTab,
-  runConfirmAfterPaymentOnTab,
-} from "./lib/autofill.js";
-import { MESSAGES, BOOKING_STATUS, ERROR_CODES } from "./lib/messages.js";
+import { fetchBooking, fetchGuestDetails, resolveVendorLink } from "./lib/aries.js";
+import { fetchAutofillScript, runAutofillOnTab } from "./lib/autofill.js";
+import { MESSAGES, BOOKING_STATUS } from "./lib/messages.js";
 import { isAuthenticated } from "./lib/session.js";
 import { createTab, waitForTabLoad } from "./lib/tabs.js";
 import { reportBookingEvent } from "./lib/telemetry.js";
 
 const LOG = "[Headout Autofill]";
-
-/**
- * The most recent booking run that reached PAYMENT_REQUIRED, kept so a later
- * CONFIRM_AFTER_PAYMENT can re-run the script's `confirmAfterPayment()` on the
- * same vendor tab. (Single-slot: one booking is driven at a time.)
- * @type {{ tabId: number, link: string, bookingId: string|number } | null}
- */
-let pendingBooking = null;
 
 /**
  * Booking id -> vendor link -> automation up to payment.
@@ -37,7 +25,11 @@ let pendingBooking = null;
 async function runBookingAutofill(bookingId) {
   const env = await getEnvironment();
 
-  const booking = await fetchBooking(env, bookingId);
+  const [bookingDetails, guestDetails] = await Promise.all([
+    fetchBooking(env, bookingId),
+    fetchGuestDetails(env, bookingId),
+  ]);
+  const booking = { ...bookingDetails, guestDetails };
   const link = await resolveVendorLink(env, booking);
   const script = await fetchAutofillScript(link);
 
@@ -48,8 +40,6 @@ async function runBookingAutofill(bookingId) {
   const durationMs = Date.now() - started;
 
   const status = result?.status ?? BOOKING_STATUS.ERROR;
-  pendingBooking =
-    status === BOOKING_STATUS.PAYMENT_REQUIRED ? { tabId: tab.id, link, bookingId } : null;
 
   // Best-effort observability report (never throws).
   reportBookingEvent({
@@ -67,22 +57,16 @@ async function runBookingAutofill(bookingId) {
 }
 
 /**
- * Re-run the generated script's `confirmAfterPayment()` on the vendor tab from
- * the last PAYMENT_REQUIRED run, to capture the order reference after the agent
- * has paid manually.
+ * Accept the agent's direct yes/no answer after manual payment.
+ * No vendor-side confirmation script is run here.
+ * @param {boolean} paid
  * @returns {Promise<{ status: string, result: object }>}
  */
-async function confirmAfterPayment() {
-  if (!pendingBooking) throw new Error(ERROR_CODES.NO_PENDING_BOOKING);
+async function acceptPaymentDecision(paid) {
+  const status = paid ? BOOKING_STATUS.CONFIRMED : BOOKING_STATUS.PAYMENT_REQUIRED;
+  const result = { userConfirmed: Boolean(paid) };
 
-  const env = await getEnvironment();
-  const script = await fetchAutofillScript(pendingBooking.link);
-  const result = await runConfirmAfterPaymentOnTab(pendingBooking.tabId, script);
-
-  const status = result?.status ?? BOOKING_STATUS.ERROR;
-  if (status === BOOKING_STATUS.CONFIRMED) pendingBooking = null;
-
-  console.log(`${LOG} confirmAfterPayment -> ${status}`, result);
+  console.log(`${LOG} payment decision -> ${status}`, result);
   return { status, result };
 }
 
@@ -102,7 +86,7 @@ const HANDLERS = {
 
   [MESSAGES.RUN_BOOKING_AUTOFILL]: ({ bookingId }) => runBookingAutofill(bookingId),
 
-  [MESSAGES.CONFIRM_AFTER_PAYMENT]: () => confirmAfterPayment(),
+  [MESSAGES.PAYMENT_DECISION]: ({ paid }) => acceptPaymentDecision(Boolean(paid)),
 };
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
